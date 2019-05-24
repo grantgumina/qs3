@@ -1,0 +1,7 @@
+[package]
+name = "qs3"
+version = "0.1.0"
+authors = ["Grant Gumina <grantgumina@outlook.com>"]
+edition = "2018"
+
+[dependencies]
