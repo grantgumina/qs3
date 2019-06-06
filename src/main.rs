@@ -2,15 +2,19 @@ extern crate clap;
 extern crate rusoto_core;
 extern crate rusoto_s3;
 
+use std::fs::File;
+use std::io::Read;
+use std::vec::Vec;
 use if_chain::if_chain;
 use clap::{Arg, ArgMatches, App, SubCommand};
-
+use rusoto_core::{Region};
+use rusoto_s3::{S3Client, S3, Bucket, PutObjectRequest};
 
 fn import(matches: &ArgMatches) {
 
     if_chain! {
-        if let file_path = matches.value_of("file_path");
-        if let bucket_path = matches.value_of("s3_location");
+        if let _file_path = matches.value_of("file_path");
+        if let _bucket_path = matches.value_of("s3_location");
         then {
             println!("Yup all arguments supplied!");
         }
@@ -18,7 +22,46 @@ fn import(matches: &ArgMatches) {
 
 }
 
+fn upload_file_to_s3(file_path: &str, bucket_url: &str) {
+    
+    let s3_client = S3Client::new(Region::UsWest2);
+    let mut local_file = File::open(file_path).expect("Invalid file path");
+    let mut local_file_contents: Vec<u8> = Vec::new();
+    
+    // Handle files which are too big to upload in one shot
+    match local_file.read_to_end(&mut local_file_contents) {
+        Ok(_) => {
+            let request = PutObjectRequest {
+                bucket: bucket_url.to_owned(),
+                key: file_path.to_owned(),
+                body: Some(local_file_contents.into()),
+                ..Default::default()
+            };
+            
+            s3_client.put_object(request).sync().unwrap();
+        },
+        Err(error) => {
+            println!("Error: {:#?}", error);
+        }
+    }
+
+}
+
 fn export(matches: &ArgMatches) {
+
+    if_chain! {
+        if let file_path = matches.value_of("file_path").unwrap();
+        if let bucket_url = matches.value_of("s3_location").unwrap();
+
+        then {
+
+            // Check if path is a directory
+
+            upload_file_to_s3(file_path, bucket_url);
+
+        }
+    }
+
 }
 
 fn main() {
@@ -73,3 +116,21 @@ fn main() {
         _ => println!("Use `qs3 -h` for help"),
     }
 }
+
+
+
+// match s3_client.list_buckets().sync() {
+//     Ok(output) => {
+//         match output.buckets {
+//             Some(bucket_list) => {
+//                 for bucket in bucket_list {
+//                     println!("{:#?}", bucket.name);
+//                 }
+//             },
+//             None => println!("No buckets found!"),
+//         }
+//     }, 
+//     Err(error) => {
+//         println!("Error: {:?}", error);
+//     },
+// }
