@@ -5,3 +5,7 @@ authors = ["Grant Gumina <grantgumina@outlook.com>"]
 edition = "2018"
 
 [dependencies]
+clap = "2.33.0"
+rusoto_core = "0.39.0"
+rusoto_s3 = "0.39.0"
+if_chain = "1.0.0"
