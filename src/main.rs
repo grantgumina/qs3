@@ -11,6 +11,8 @@ use clap::{Arg, ArgMatches, App, SubCommand};
 use rusoto_core::{Region};
 use rusoto_s3::{S3Client, S3, Bucket, PutObjectRequest};
 
+pub mod constants;
+
 fn import(matches: &ArgMatches) {
 
     if_chain! {
@@ -24,9 +26,9 @@ fn import(matches: &ArgMatches) {
 }
 
 fn upload_file_to_s3(file_path: &str, bucket_url: &str) {
-    
+
     let s3_client = S3Client::new(Region::UsWest2);
-    let mut local_file = File::open(file_path).expect("Invalid file path");
+    let mut local_file = File::open(file_path).expect(constants::FILE_NOT_FOUND_ERROR);
     let mut local_file_contents: Vec<u8> = Vec::new();
     
     // Handle files which are too big to upload in one shot
@@ -44,7 +46,7 @@ fn upload_file_to_s3(file_path: &str, bucket_url: &str) {
 
         },
         Err(error) => {
-            println!("Error: {:#?}", error);
+            println!("{:#?}", error);
         }
     }
 
@@ -59,8 +61,13 @@ fn export(matches: &ArgMatches) {
         then {
 
             // Check if path is a directory
-
-            upload_file_to_s3(file_path, bucket_url);
+            let path_metadata = metadata(file_path).expect(constants::FILE_NOT_FOUND_ERROR);
+            
+            if path_metadata.is_file() {
+                upload_file_to_s3(file_path, bucket_url);
+            } else {
+                // Upload a directory
+            }
 
         }
     }
