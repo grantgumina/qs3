@@ -3,6 +3,7 @@ extern crate rusoto_core;
 extern crate rusoto_s3;
 
 use std::fs::File;
+use std::fs::metadata;
 use std::io::Read;
 use std::vec::Vec;
 use if_chain::if_chain;
@@ -31,6 +32,7 @@ fn upload_file_to_s3(file_path: &str, bucket_url: &str) {
     // Handle files which are too big to upload in one shot
     match local_file.read_to_end(&mut local_file_contents) {
         Ok(_) => {
+            
             let request = PutObjectRequest {
                 bucket: bucket_url.to_owned(),
                 key: file_path.to_owned(),
@@ -39,6 +41,7 @@ fn upload_file_to_s3(file_path: &str, bucket_url: &str) {
             };
             
             s3_client.put_object(request).sync().unwrap();
+
         },
         Err(error) => {
             println!("Error: {:#?}", error);
