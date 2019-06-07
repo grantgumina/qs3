@@ -123,7 +123,7 @@ fn main() {
     match matches.subcommand() {
         ("import", Some(m)) => import(m),
         ("export", Some(m)) => export(m),
-        _ => println!("Use `qs3 -h` for help"),
+        _ => println!("{}", constants::QS3_DEFAULT_HELP_MESSAGE),
     }
 }
 
