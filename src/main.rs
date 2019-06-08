@@ -3,13 +3,13 @@ extern crate rusoto_core;
 extern crate rusoto_s3;
 
 use std::fs::File;
-use std::fs::metadata;
+use std::fs::{metadata, Metadata};
 use std::io::Read;
 use std::vec::Vec;
 use if_chain::if_chain;
 use clap::{Arg, ArgMatches, App, SubCommand};
 use rusoto_core::{Region};
-use rusoto_s3::{S3Client, S3, Bucket, PutObjectRequest};
+use rusoto_s3::{S3Client, S3, Bucket, PutObjectRequest, CreateMultipartUploadRequest};
 
 pub mod constants;
 
@@ -25,30 +25,53 @@ fn import(matches: &ArgMatches) {
 
 }
 
-fn upload_file_to_s3(file_path: &str, bucket_url: &str) {
+fn upload_file_to_s3(file_path: &str, bucket_url: &str, file_metadata: Metadata) {
 
     let s3_client = S3Client::new(Region::UsWest2);
     let mut local_file = File::open(file_path).expect(constants::FILE_NOT_FOUND_ERROR);
     let mut local_file_contents: Vec<u8> = Vec::new();
     
     // Handle files which are too big to upload in one shot
-    match local_file.read_to_end(&mut local_file_contents) {
-        Ok(_) => {
-            
-            let request = PutObjectRequest {
-                bucket: bucket_url.to_owned(),
-                key: file_path.to_owned(),
-                body: Some(local_file_contents.into()),
-                ..Default::default()
-            };
-            
-            s3_client.put_object(request).sync().unwrap();
+    if file_metadata.len() >= 104857600 {
 
-        },
-        Err(error) => {
-            println!("{:#?}", error);
+        // Create an upload request
+
+        // Create a multipart upload request and get the ID
+        let multi_part_upload_request = CreateMultipartUploadRequest {
+            bucket: bucket_url.to_owned(),
+            key: file_path.to_owned(),
+            ..Default::default()
+        };
+
+        let upload = s3_client.create_multipart_upload(multi_part_upload_request).sync().expect(constants::S3_MULTI_PART_UPLOAD_ERROR);
+        let upload_id = upload.upload_id.expect(constants::S3_UPLOAD_ID_INVALID);
+
+        
+
+
+    } else {
+
+        match local_file.read_to_end(&mut local_file_contents) {
+            Ok(_) => {
+                
+                let request = PutObjectRequest {
+                    bucket: bucket_url.to_owned(),
+                    key: file_path.to_owned(),
+                    body: Some(local_file_contents.into()),
+                    ..Default::default()
+                };
+                
+                s3_client.put_object(request).sync().unwrap();
+
+            },
+            Err(error) => {
+                println!("{:#?}", error);
+            }
         }
+
     }
+
+    
 
 }
 
@@ -64,7 +87,7 @@ fn export(matches: &ArgMatches) {
             let path_metadata = metadata(file_path).expect(constants::FILE_NOT_FOUND_ERROR);
             
             if path_metadata.is_file() {
-                upload_file_to_s3(file_path, bucket_url);
+                upload_file_to_s3(file_path, bucket_url, path_metadata);
             } else {
                 // Upload a directory
             }
