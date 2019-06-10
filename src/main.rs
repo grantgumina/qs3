@@ -1,11 +1,15 @@
 extern crate clap;
 extern crate rusoto_core;
 extern crate rusoto_s3;
+extern crate num_cpus;
 
-use std::fs::File;
-use std::fs::{metadata, Metadata};
-use std::io::Read;
-use std::vec::Vec;
+use std:: {
+    fs::{metadata, Metadata, File},
+    io::{Read, BufRead, BufReader},
+    path::{Path},
+    vec::Vec
+};
+
 use if_chain::if_chain;
 use clap::{Arg, ArgMatches, App, SubCommand};
 use rusoto_core::{Region};
@@ -29,25 +33,46 @@ fn upload_file_to_s3(file_path: &str, bucket_url: &str, file_metadata: Metadata)
 
     let s3_client = S3Client::new(Region::UsWest2);
     let mut local_file = File::open(file_path).expect(constants::FILE_NOT_FOUND_ERROR);
+    let local_file_path = Path::new(file_path);
+
+    // TODO - Clean this up please
+    let local_file_name = local_file_path.file_name().expect(constants::FILE_NOT_FOUND_ERROR).to_str().expect(constants::FILE_NOT_FOUND_ERROR);
     let mut local_file_contents: Vec<u8> = Vec::new();
     
     // Handle files which are too big to upload in one shot
-    if file_metadata.len() >= 104857600 {
-
-        // Create an upload request
-
+    if file_metadata.len() >= constants::LARGE_FILE_BYTES_THRESHOLD {
+    
         // Create a multipart upload request and get the ID
         let multi_part_upload_request = CreateMultipartUploadRequest {
             bucket: bucket_url.to_owned(),
-            key: file_path.to_owned(),
+            key: local_file_name.to_owned(),
             ..Default::default()
         };
 
         let upload = s3_client.create_multipart_upload(multi_part_upload_request).sync().expect(constants::S3_MULTI_PART_UPLOAD_ERROR);
         let upload_id = upload.upload_id.expect(constants::S3_UPLOAD_ID_INVALID);
 
-        
+        println!("Upload ID: {:#?}", upload_id);
 
+        // Create necessary parts for this multipart upload
+        // Upload each part of the file
+        let mut big_file_reader = BufReader::with_capacity(constants::AWS_MIN_PART_SIZE as usize, local_file);        
+
+        loop {
+
+            let buffer = big_file_reader.fill_buf().expect(constants::LARGE_FILE_BUFFER_FILL_ERROR);
+            // Work with the buffer here
+            let length = buffer.len();
+
+            if length == 0 {
+                break;
+            }
+
+            big_file_reader.consume(length as usize);
+
+        }
+
+        // Finalize the multipart upload by sending a completed request
 
     } else {
 
