@@ -13,7 +13,7 @@ use std:: {
 use if_chain::if_chain;
 use clap::{Arg, ArgMatches, App, SubCommand};
 use rusoto_core::{Region};
-use rusoto_s3::{S3Client, S3, Bucket, PutObjectRequest, CreateMultipartUploadRequest};
+use rusoto_s3::{S3Client, S3, Bucket, PutObjectRequest, CompletedMultipartUpload, CompletedPart, CreateMultipartUploadRequest, UploadPartRequest, AbortMultipartUploadRequest, CompleteMultipartUploadRequest};
 
 pub mod constants;
 
@@ -46,7 +46,7 @@ fn upload_file_to_s3(file_path: &str, bucket_url: &str, file_metadata: Metadata)
         let multi_part_upload_request = CreateMultipartUploadRequest {
             bucket: bucket_url.to_owned(),
             key: local_file_name.to_owned(),
-            ..Default::default()
+            ..Default::default() // sets rest of the parameters to their default value
         };
 
         let upload = s3_client.create_multipart_upload(multi_part_upload_request).sync().expect(constants::S3_MULTI_PART_UPLOAD_ERROR);
@@ -58,21 +58,86 @@ fn upload_file_to_s3(file_path: &str, bucket_url: &str, file_metadata: Metadata)
         // Upload each part of the file
         let mut big_file_reader = BufReader::with_capacity(constants::AWS_MIN_PART_SIZE as usize, local_file);        
 
-        loop {
+        let mut part_number: i64 = 1;
+        let mut completed_parts: Vec<CompletedPart> = Vec::new();
+
+        let upload_attempt = loop {
 
             let buffer = big_file_reader.fill_buf().expect(constants::LARGE_FILE_BUFFER_FILL_ERROR);
             // Work with the buffer here
+            let part_upload_request = UploadPartRequest {
+                body: Some(buffer.to_vec().into()),
+                bucket: bucket_url.to_owned(),
+                key: local_file_name.to_owned(),
+                upload_id: upload_id.to_owned(),
+                part_number: part_number.to_owned(),
+                ..Default::default()
+            };
+
+            // Attempt to upload a part
+            match s3_client.upload_part(part_upload_request).sync() {
+                Ok(response) => {
+                    println!("Uploaded part #: {:#?}", part_number);
+                    
+                    let completed_part = CompletedPart {
+                        e_tag: response.e_tag.clone(),
+                        part_number: Some(part_number)
+                    };
+
+                    completed_parts.push(completed_part);
+                },
+                Err(error) => {
+                    break Err(error);
+                }
+            }
+            
             let length = buffer.len();
 
             if length == 0 {
-                break;
+                break Ok(0);
             }
 
             big_file_reader.consume(length as usize);
+            part_number += 1;
 
-        }
+        };
 
-        // Finalize the multipart upload by sending a completed request
+        match upload_attempt {
+            Ok(_) => {
+
+                // Finalize the multipart upload by sending a completed request
+                let completed_upload = CompletedMultipartUpload {
+                    parts: Some(completed_parts)
+                };
+                
+                let completed_multipart_upload_request = CompleteMultipartUploadRequest {
+                    bucket: bucket_url.to_owned(),
+                    key: local_file_name.to_owned(),
+                    upload_id: upload_id.to_owned(),
+                    multipart_upload: Some(completed_upload),
+                    ..Default::default()
+                };
+
+                s3_client.complete_multipart_upload(completed_multipart_upload_request).sync().expect(constants::S3_COMPLETED_MULTI_PART_UPLOAD_REQUEST_ERROR);
+
+            },
+            Err(error) => {
+
+                    println!("{:#?}{:#?}", constants::S3_PART_UPLOAD_REQUEST_ERROR, part_number);
+                    println!("{:#?}", error);
+                    
+                    println!("Aborting multipart upload request");
+                    let abort_multi_part_upload_request = AbortMultipartUploadRequest {
+                        bucket: bucket_url.to_owned(),
+                        key: local_file_name.to_owned(),
+                        upload_id: upload_id.to_owned(),
+                        ..Default::default() 
+                    };
+
+                    s3_client.abort_multipart_upload(abort_multi_part_upload_request).sync().expect(constants::S3_ABORT_MULTI_PART_UPLOAD_ERROR);
+
+            }
+        };
 
     } else {
 
